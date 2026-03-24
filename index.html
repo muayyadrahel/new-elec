@@ -1,0 +1,1612 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>المحاسب Pro - نظام إدارة فواتير الكهرباء الذكي</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="محاسب Pro">
+    <link rel="apple-touch-icon" href="icons/icon-192x192.png">
+
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('./sw.js')
+            .then(reg => console.log('Service Worker Registered'))
+            .catch(err => console.log('Service Worker Failed or offline', err));
+        });
+      }
+    </script>
+
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.rtl.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap');
+        body {
+            font-family: 'Tajawal', sans-serif;
+            background-color: #f4f6f9;
+            color: #333;
+        }
+        .navbar {
+            background-color: #1e3a8a;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .navbar-brand, .nav-link { color: #fff !important; }
+        .nav-link:hover { color: #fbbf24 !important; }
+        .card {
+            border: none; border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            margin-bottom: 20px;
+        }
+        .card-header {
+            background-color: #fff; border-bottom: 2px solid #f4f6f9;
+            font-weight: bold; border-radius: 12px 12px 0 0 !important;
+        }
+        .page-section { display: none; }
+        .page-section.active { display: block; animation: fadeIn 0.3s; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .table-responsive { border-radius: 10px; overflow: auto; }
+        .table th { background-color: #1e3a8a; color: white; white-space: nowrap; }
+        .table td { vertical-align: middle; }
+        .action-btn { margin: 0 2px; }
+        
+        /* Dashboard Widgets */
+        .stat-card {
+            background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
+            color: white; padding: 20px; border-radius: 12px; text-align: center;
+            height: 100%; display: flex; flex-direction: column; justify-content: center;
+        }
+        .stat-card h3 { font-size: 2rem; margin-top: 10px; font-weight: bold; }
+        .trend-indicator { font-size: 0.9rem; padding: 5px 10px; border-radius: 20px; font-weight: bold; display: inline-block; margin-top: 10px;}
+        .trend-up { background-color: rgba(255, 255, 255, 0.2); color: #fff; }
+        .trend-down { background-color: rgba(255, 255, 255, 0.2); color: #fff; }
+        
+        /* Print & Unified Modal Styles */
+        .preview-container {
+            background: #fff; padding: 30px; box-shadow: 0 0 15px rgba(0,0,0,0.1);
+            margin: auto; max-width: 900px; color: #000;
+            position: relative;
+            z-index: 1;
+        }
+        .print-header { text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 20px; }
+        .print-footer { text-align: center; margin-top: 20px; font-size: 0.9rem; color: #666; border-top: 1px solid #ddd; padding-top: 10px;}
+        .badge-percent { background-color: #e2e3e5; color: #1e3a8a; padding: 2px 6px; border-radius: 10px; font-size: 0.8rem; }
+        .waste-summary { background-color: #ffc107; color: #000; padding: 5px 10px; border-radius: 20px; font-weight: bold; }
+        
+        @media (max-width: 768px) {
+            .table-responsive table { min-width: 1200px; }
+            .table-responsive { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+            .table input[type="number"] { min-width: 100px !important; width: 100% !important; }
+        }
+
+        /* Chart container */
+        .chart-container { position: relative; height: 300px; width: 100%; }
+        
+        /* Modal Backdrop Override for print */
+        @media print {
+            body * { visibility: hidden; }
+            #unifiedPreviewBody, #unifiedPreviewBody * { visibility: visible; }
+            #unifiedPreviewBody { position: absolute; left: 0; top: 0; width: 100%; padding: 0; background: white; margin: 0; box-shadow: none; }
+            .modal-content { border: none; box-shadow: none; }
+            .modal-header, .modal-footer { display: none !important; }
+        }
+        /* تنسيق التحذير */
+        .warning-message {
+            background-color: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeeba;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+    <nav class="navbar navbar-expand-lg sticky-top">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#"><i class="fa-solid fa-bolt text-warning"></i> المحاسب Pro للكهرباء</a>
+            <button class="navbar-toggler bg-light" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+                    <li class="nav-item"><a class="nav-link" href="#" onclick="showPage('dashboard')"><i class="fa-solid fa-chart-pie"></i> الرئيسية</a></li>
+                    <li class="nav-item"><a class="nav-link" href="#" onclick="showPage('subscribers')"><i class="fa-solid fa-users"></i> المشتركون</a></li>
+                    <li class="nav-item"><a class="nav-link" href="#" onclick="showPage('readings')"><i class="fa-solid fa-file-invoice"></i> القراءات والفواتير</a></li>
+                    <li class="nav-item"><a class="nav-link" href="#" onclick="showPage('accounts')"><i class="fa-solid fa-wallet"></i> كشوف الحسابات</a></li>
+                    <li class="nav-item"><a class="nav-link" href="#" onclick="showPage('settings')"><i class="fa-solid fa-cogs"></i> الإعدادات</a></li>
+                </ul>
+                <button id="installAppBtn" class="btn btn-warning fw-bold text-dark d-none">
+                    <i class="fa-solid fa-download"></i> تثبيت التطبيق
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid py-4">
+        
+        <div id="dashboard" class="page-section active">
+            <h2 class="mb-4 fw-bold text-primary"><i class="fa-solid fa-chart-line"></i> التحليلات ولوحة القيادة</h2>
+            
+            <div class="row">
+                <div class="col-md-3 mb-3">
+                    <div class="stat-card">
+                        <i class="fa-solid fa-users fa-2x mb-2"></i>
+                        <h5>إجمالي المشتركين</h5>
+                        <h3 id="dash-subs-count">0</h3>
+                    </div>
+                </div>
+                <div class="col-md-3 mb-3">
+                    <div class="stat-card" style="background: linear-gradient(135deg, #047857 0%, #10b981 100%);">
+                        <i class="fa-solid fa-coins fa-2x mb-2"></i>
+                        <h5>الديون المستحقة</h5>
+                        <h3 id="dash-total-debt">0 ل.س</h3>
+                    </div>
+                </div>
+                <div class="col-md-3 mb-3">
+                    <div class="stat-card" style="background: linear-gradient(135deg, #b91c1c 0%, #ef4444 100%);">
+                        <i class="fa-solid fa-calendar-check fa-2x mb-2"></i>
+                        <h5>الأشهر المسجلة</h5>
+                        <h3 id="dash-months-count">0</h3>
+                    </div>
+                </div>
+                <div class="col-md-3 mb-3">
+                    <div class="stat-card" style="background: linear-gradient(135deg, #6b21a8 0%, #a855f7 100%);" id="dash-cycle-card">
+                        <i class="fa-solid fa-clock fa-2x mb-2"></i>
+                        <h5>تنبيه الدورة القادمة</h5>
+                        <h3 id="dash-cycle-status" class="fs-5 mt-2">جاري الحساب...</h3>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row mt-2">
+                <div class="col-md-4 mb-4">
+                    <div class="card h-100 border-primary">
+                        <div class="card-header bg-primary text-white"><i class="fa-solid fa-scale-balanced"></i> مقارنة الاستهلاك (شهري)</div>
+                        <div class="card-body text-center d-flex flex-column justify-content-center">
+                            <h6 class="text-muted" id="comp-months-labels">الشهر الحالي vs السابق</h6>
+                            <h3 class="my-3 text-primary fw-bold" id="comp-current-kwh">0 Kwh</h3>
+                            <div id="comp-trend">
+                                <span class="badge bg-secondary p-2 fs-6">لا توجد بيانات كافية</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-8 mb-4">
+                    <div class="card h-100 border-danger">
+                        <div class="card-header bg-danger text-white d-flex justify-content-between">
+                            <span><i class="fa-solid fa-triangle-exclamation"></i> الديون العالية (أعلى 5 مشتركين)</span>
+                            <span class="badge bg-light text-danger">تتطلب المتابعة</span>
+                        </div>
+                        <div class="card-body p-0">
+                            <div class="table-responsive">
+                                <table class="table table-hover mb-0 text-center align-middle">
+                                    <thead class="table-light">
+                                        <tr><th>المشترك</th><th>رقم الجوال</th><th class="text-danger">الرصيد المطلوب</th><th>إجراء</th></tr>
+                                    </thead>
+                                    <tbody id="dash-defaulters-tbody">
+                                        <tr><td colspan="4" class="text-muted">لا يوجد ديون مسجلة</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-12 mb-4">
+                    <div class="card shadow-sm">
+                        <div class="card-header bg-dark text-white"><i class="fa-solid fa-chart-column"></i> الأكثر استهلاكاً (خلال الشهر الأخير)</div>
+                        <div class="card-body">
+                            <div class="chart-container">
+                                <canvas id="topConsumersChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="subscribers" class="page-section">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2>إدارة المشتركين</h2>
+                <button class="btn btn-primary" onclick="openSubModal()"><i class="fa-solid fa-plus"></i> إضافة مشترك جديد</button>
+            </div>
+            <div class="card">
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0 text-center align-middle">
+                            <thead>
+                                <tr>
+                                    <th>الاسم</th><th>رقم الجوال</th><th>محول الشدة</th><th>هدر كابلات</th>
+                                    <th>فرق عدادين</th><th>مياه ثابتة</th><th>القراءة الأولية</th><th>الرصيد (ل.س)</th><th>إجراءات</th>
+                                </tr>
+                            </thead>
+                            <tbody id="subs-tbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="readings" class="page-section">
+            <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+                <h2>إدخال القراءات وحساب الفواتير</h2>
+                <div class="d-flex gap-2 flex-wrap">
+                    <select id="month-select" class="form-select w-auto" onchange="loadMonthData()"></select>
+                    <button class="btn btn-success" onclick="createNewMonth()"><i class="fa-solid fa-calendar-plus"></i> شهر جديد</button>
+                    <button class="btn btn-warning" onclick="editMonthData()"><i class="fa-solid fa-pen-to-square"></i> تعديل بيانات الشهر</button>
+                    <button class="btn btn-danger" onclick="deleteMonth()"><i class="fa-solid fa-trash"></i> حذف الشهر</button>
+                </div>
+            </div>
+
+            <div id="readings-content" style="display:none;">
+                <div class="row mb-4">
+                    <div class="col-md-6">
+                        <div class="card border-primary">
+                            <div class="card-header bg-primary text-white">قراءة مركز التحويل (محول الافتراضي: <span id="lbl-trans-mult"></span>)</div>
+                            <div class="card-body row">
+                                <div class="col-6 mb-2"><label>القراءة السابقة</label><input type="number" id="trans-prev" class="form-control" oninput="calculateCurrentMonth()"></div>
+                                <div class="col-6 mb-2"><label>القراءة الحالية</label><input type="number" id="trans-curr" class="form-control" oninput="calculateCurrentMonth()"></div>
+                                <div class="col-12 mt-2 text-primary fw-bold">الاستهلاك: <span id="trans-cons">0</span> Kwh</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card border-danger">
+                            <div class="card-header bg-danger text-white">قراءة العداد الرئيسي (محول الافتراضي: <span id="lbl-main-mult"></span>)</div>
+                            <div class="card-body row">
+                                <div class="col-6 mb-2"><label>القراءة السابقة</label><input type="number" id="main-prev" class="form-control" oninput="calculateCurrentMonth()"></div>
+                                <div class="col-6 mb-2"><label>القراءة الحالية</label><input type="number" id="main-curr" class="form-control" oninput="calculateCurrentMonth()"></div>
+                                <div class="col-12 mt-2 text-danger fw-bold">الاستهلاك: <span id="main-cons">0</span> Kwh</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="alert alert-info d-flex justify-content-between flex-wrap">
+                    <span><strong>الفرق بين العدادين:</strong> <span id="calc-diff">0</span> Kwh</span>
+                    <span><strong>هدر الكابلات:</strong> <span id="calc-waste">0</span> Kwh</span>
+                    <span><strong>إجمالي استهلاك المشتركين:</strong> <span id="calc-subs-total">0</span> Kwh</span>
+                    <span class="waste-summary"><strong>مجموع استهلاك الهدر:</strong> <span id="calc-waste-sum">0</span> Kwh</span>
+                </div>
+
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span>قراءات المشتركين</span>
+                        <div>
+                            <span class="badge bg-dark fs-6">
+                                سعر الكيلو لهذا الشهر: <span id="lbl-kwh-price"></span> ل.س
+                                <button class="btn btn-sm btn-outline-light ms-2 py-0" onclick="editMonthPrice()" title="تعديل السعر لهذا الشهر"><i class="fa-solid fa-pen"></i></button>
+                            </span>
+                            <button class="btn btn-sm btn-warning ms-2" onclick="toggleManualEdit()"><i class="fa-solid fa-pencil"></i> تعديل يدوي للقراءات السابقة</button>
+                        </div>
+                    </div>
+                    <div id="manual-warning" class="warning-message mx-3 mt-2">
+                        <i class="fa-solid fa-exclamation-triangle"></i> تحذير: تعديل القراءات السابقة قد يؤدي إلى أخطاء في استمرارية القراءات. يرجى التأكد من صحة البيانات.
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-bordered table-sm text-center align-middle mb-0" style="font-size: 0.9rem;">
+                                <thead>
+                                    <tr>
+                                        <th>المشترك</th><th style="min-width:110px;">الحالية</th><th style="min-width:110px;">السابقة</th>
+                                        <th>استهلاكه</th><th style="min-width:100px;">تعديل</th><th>نصيبه فرق</th>
+                                        <th>% الفرق</th><th>نصيبه هدر</th><th>% الهدر</th><th>الإجمالي Kwh</th>
+                                        <th style="min-width:100px;">غرامات</th><th>مياه</th><th class="bg-warning">المطلوب</th><th>إجراءات</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="readings-tbody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="card-footer text-end">
+                        <button class="btn btn-primary" onclick="saveMonthData()"><i class="fa-solid fa-save"></i> حفظ الأرصدة</button>
+                        <button class="btn btn-info" onclick="exportFullMonthlyReport()"><i class="fa-solid fa-file-invoice"></i> تقرير شهري كامل</button>
+                        <button class="btn btn-warning" onclick="exportMonthlyDuesReport()"><i class="fa-solid fa-coins"></i> كشف الاستحقاقات</button>
+                    </div>
+                </div>
+            </div>
+            <div id="no-month-msg" class="alert alert-warning">الرجاء اختيار شهر أو إنشاء شهر جديد.</div>
+        </div>
+
+        <div id="accounts" class="page-section">
+            <h2 class="mb-4">كشف حساب مشترك</h2>
+            <div class="row mb-3">
+                <div class="col-md-6">
+                    <select id="acc-sub-select" class="form-select form-select-lg" onchange="renderAccount()"></select>
+                </div>
+                <div class="col-md-6 text-end" id="acc-actions" style="display:none;">
+                    <button class="btn btn-success" onclick="openPaymentModal()"><i class="fa-solid fa-hand-holding-dollar"></i> تسجيل دفعة</button>
+                    <button class="btn btn-info" onclick="exportAccountStatement()"><i class="fa-solid fa-print"></i> معاينة وتصدير الكشف</button>
+                </div>
+            </div>
+
+            <div id="account-content" style="display:none;">
+                <div class="row mb-3">
+                    <div class="col-md-4"><div class="alert alert-secondary"><strong>المشترك: </strong><span id="acc-name"></span></div></div>
+                    <div class="col-md-4"><div class="alert alert-secondary"><strong>الجوال: </strong><span id="acc-phone"></span></div></div>
+                    <div class="col-md-4"><div class="alert alert-danger"><strong>الرصيد: </strong><span id="acc-balance"></span> ل.س</div></div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-striped text-center align-middle mb-0">
+                                <thead class="table-dark">
+                                    <tr><th>التاريخ / البيان</th><th>النوع</th><th>المطلوب (ل.س)</th><th>المدفوع (ل.س)</th><th>إجراءات</th></tr>
+                                </thead>
+                                <tbody id="acc-tbody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="settings" class="page-section">
+            <h2 class="mb-4">الإعدادات والتصدير</h2>
+            <div class="row">
+                <div class="col-md-6 mb-4">
+                    <div class="card h-100">
+                        <div class="card-header bg-dark text-white">إعدادات التسعير والمحولات (الافتراضية)</div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <label>السعر الافتراضي للكيلو واط (ل.س)</label>
+                                <input type="number" id="set-price" class="form-control">
+                                <small class="text-muted">هذا السعر هو الافتراضي للأشهر الجديدة، مع إمكانية تعديله لكل شهر على حدة.</small>
+                            </div>
+                            <div class="mb-3"><label>محول مركز التحويل</label><input type="number" id="set-trans-mult" class="form-control"></div>
+                            <div class="mb-3"><label>محول العداد الرئيسي</label><input type="number" id="set-main-mult" class="form-control"></div>
+                            <button class="btn btn-primary w-100" onclick="saveSettings()">حفظ الإعدادات</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6 mb-4">
+                    <div class="card h-100">
+                        <div class="card-header bg-dark text-white">قوالب رسائل واتساب</div>
+                        <div class="card-body">
+                            <div class="mb-3"><label>الفاتورة</label><textarea id="whatsapp-bill-template" class="form-control" rows="2"></textarea></div>
+                            <div class="mb-3"><label>كشف الحساب</label><textarea id="whatsapp-account-template" class="form-control" rows="2"></textarea></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-md-12 mb-4">
+                    <div class="card border-success">
+                        <div class="card-header bg-success text-white">الاستيراد والتصدير (Excel / JSON)</div>
+                        <div class="card-body row text-center">
+                            <div class="col-md-3 border-end mb-2">
+                                <button class="btn btn-outline-success w-100" onclick="exportExcel()"><i class="fa-solid fa-file-excel"></i> تصدير Excel</button>
+                            </div>
+                            <div class="col-md-4 border-end mb-2 d-flex gap-2">
+                                <input type="file" id="excel-file" class="form-control form-control-sm" accept=".xlsx, .xls">
+                                <button class="btn btn-success" onclick="importExcel()">استيراد</button>
+                            </div>
+                            <div class="col-md-2 border-end mb-2">
+                                <button class="btn btn-dark w-100" onclick="exportBackup()"><i class="fa-solid fa-download"></i> نسخ JSON</button>
+                            </div>
+                            <div class="col-md-3 mb-2 d-flex gap-2">
+                                <input type="file" id="backup-file" class="form-control form-control-sm" accept=".json">
+                                <button class="btn btn-danger" onclick="importBackup()">استعادة</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-md-12 mb-4">
+                    <div class="card">
+                        <div class="card-header text-primary fw-bold">تخصيص الهوية البصرية للطباعة (Branding)</div>
+                        <div class="card-body row">
+                            <div class="col-md-3 mb-2"><label>الشعار</label><input type="file" id="logo-upload" class="form-control form-control-sm" accept="image/*" onchange="handleLogoUpload(event)">
+                                <img id="logo-preview" src="#" style="max-height:50px; display:none; margin-top:5px;"></div>
+                            <div class="col-md-2 mb-2"><label>عرض الشعار</label><input type="number" id="logo-width" class="form-control form-control-sm" value="150"></div>
+                            <div class="col-md-2 mb-2"><label>لون العنوان</label><input type="color" id="print-header-color" class="form-control form-control-color w-100"></div>
+                            <div class="col-md-5 mb-2"><label>عنوان الترويسة</label><input type="text" id="print-header-text" class="form-control form-control-sm"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="unifiedExportModal" tabindex="-1">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content border-0 shadow-lg">
+                <div class="modal-header bg-dark text-white">
+                    <h5 class="modal-title"><i class="fa-solid fa-eye"></i> معاينة المستند وإجراءات التصدير</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body bg-secondary bg-opacity-10 p-4" style="max-height: 65vh; overflow-y: auto;">
+                    <div id="unifiedPreviewBody" class="preview-container"></div>
+                </div>
+                <div class="modal-footer bg-white d-flex justify-content-between flex-wrap gap-2">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">إغلاق وتعديل</button>
+                    <div class="d-flex flex-wrap gap-2">
+                        <button class="btn btn-success" id="btn-export-whatsapp"><i class="fa-brands fa-whatsapp"></i> رسالة واتساب</button>
+                        <button class="btn btn-info text-white" id="btn-share-pdf"><i class="fa-solid fa-share-nodes"></i> مشاركة الملف PDF</button>
+                        
+                        <button class="btn btn-primary" id="btn-export-print"><i class="fa-solid fa-print"></i> طباعة ورقياً</button>
+                        <button class="btn btn-danger" id="btn-export-pdf"><i class="fa-solid fa-file-pdf"></i> حفظ PDF</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="subModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title" id="subModalTitle">إضافة مشترك</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="sub-id">
+                    <div class="mb-2"><label>الاسم</label><input type="text" id="sub-name" class="form-control"></div>
+                    <div class="mb-2"><label>الجوال</label><input type="text" id="sub-phone" class="form-control" placeholder="مثال: 09XXXXXXXX"></div>
+                    <div class="mb-2"><label>المحول</label><input type="number" id="sub-mult" class="form-control" value="1"></div>
+                    <div class="mb-2"><label>مياه ثابتة</label><input type="number" id="sub-water" class="form-control" value="0"></div>
+                    <div class="mb-2"><label>قراءة العداد الأولية</label><input type="number" id="sub-initial" class="form-control" value="0" placeholder="القراءة الابتدائية"></div>
+                    <div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="sub-waste" checked><label>يتحمل هدر</label></div>
+                    <div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="sub-diff" checked><label>يتحمل فرق</label></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" onclick="saveSubscriber()">حفظ</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="modal fade" id="paymentModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content"><div class="modal-header bg-success text-white"><h5 class="modal-title" id="paymentModalTitle">تسجيل دفعة</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><div class="modal-body"><input type="hidden" id="pay-id"><div class="mb-2"><label>التاريخ</label><input type="date" id="pay-date" class="form-control"></div><div class="mb-2"><label>المبلغ</label><input type="number" id="pay-amount" class="form-control"></div><div class="mb-2"><label>البيان</label><input type="text" id="pay-note" class="form-control" value="دفعة نقدية"></div></div><div class="modal-footer"><button type="button" class="btn btn-success" onclick="savePayment()">حفظ</button></div></div></div></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+        // ==========================================
+        // PWA Install Prompt Logic
+        // ==========================================
+        let deferredPrompt;
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            const installBtn = document.getElementById('installAppBtn');
+            if(installBtn) installBtn.classList.remove('d-none');
+        });
+
+        document.getElementById('installAppBtn').addEventListener('click', async () => {
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                const { outcome } = await deferredPrompt.userChoice;
+                if (outcome === 'accepted') {
+                    console.log('User accepted the install prompt');
+                }
+                deferredPrompt = null;
+                document.getElementById('installAppBtn').classList.add('d-none');
+            }
+        });
+
+        window.addEventListener('appinstalled', () => {
+            document.getElementById('installAppBtn').classList.add('d-none');
+            console.log('PWA was installed');
+        });
+
+        // Database & Initialization
+        let db = {
+            settings: { 
+                price: 1900, transMult: 1000, mainMult: 200,
+                whatsappBill: "مرحباً {name}،\nفاتورة شهر {month}:\nالمبلغ المطلوب: {amount} ل.س\nنرجو التسديد.",
+                whatsappAccount: "مرحباً {name}،\nالرصيد الحالي: {balance} ل.س\nيرجى مراجعة كشف الحساب.",
+                print: { logo: null, logoWidth: 150, headerColor: "#1e3a8a", tableBg: "#f8f9fa", textColor: "#212529", headerText: "نظام فواتير الكهرباء", footerText: "شكراً لتعاونكم", showDate: true, showBalance: true }
+            },
+            subscribers: [], months: [], readings: [], payments: []
+        };
+
+        const modals = {
+            sub: new bootstrap.Modal(document.getElementById('subModal')),
+            payment: new bootstrap.Modal(document.getElementById('paymentModal')),
+            unified: new bootstrap.Modal(document.getElementById('unifiedExportModal'))
+        };
+        let currentExportPayload = {};
+        let topChartInstance = null;
+        let manualEditMode = false;
+// ========== حل مشكلة أيقونات PWA ==========
+async function ensurePWAReady() {
+    // التحقق من وجود الأيقونات
+    const icon192Exists = await fetch('icons/icon-192x192.png').then(() => true).catch(() => false);
+    const icon512Exists = await fetch('icons/icon-512x512.png').then(() => true).catch(() => false);
+
+    if (icon192Exists && icon512Exists) {
+        console.log('الأيقونات موجودة مسبقاً');
+        return;
+    }
+
+    console.log('الأيقونات غير موجودة، سيتم إنشاؤها افتراضياً');
+
+    function createIcon(size) {
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        const grad = ctx.createLinearGradient(0, 0, size, size);
+        grad.addColorStop(0, '#1e3a8a');
+        grad.addColorStop(1, '#3b82f6');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, size, size);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = `bold ${size * 0.5}px "Tajawal", sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('⚡', size/2, size/2);
+        return canvas.toDataURL('image/png');
+    }
+
+    const icon192Data = createIcon(192);
+    const icon512Data = createIcon(512);
+
+    localStorage.setItem('pwa_icon_192', icon192Data);
+    localStorage.setItem('pwa_icon_512', icon512Data);
+
+    const dynamicManifest = {
+        name: "المحاسب Pro للكهرباء",
+        short_name: "محاسب Pro",
+        description: "نظام ذكي لإدارة فواتير الكهرباء والمشتركين",
+        start_url: "index.html",
+        display: "standalone",
+        background_color: "#1e3a8a",
+        theme_color: "#1e3a8a",
+        orientation: "portrait",
+        icons: [
+            { src: icon192Data, sizes: "192x192", type: "image/png", purpose: "any maskable" },
+            { src: icon512Data, sizes: "512x512", type: "image/png" }
+        ]
+    };
+
+    const manifestBlob = new Blob([JSON.stringify(dynamicManifest)], { type: 'application/json' });
+    const manifestURL = URL.createObjectURL(manifestBlob);
+    
+    const oldLink = document.querySelector('link[rel="manifest"]');
+    if (oldLink) oldLink.remove();
+    
+    const newLink = document.createElement('link');
+    newLink.rel = 'manifest';
+    newLink.href = manifestURL;
+    document.head.appendChild(newLink);
+
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(registrations => {
+            for(let reg of registrations) reg.unregister();
+        }).finally(() => {
+            navigator.serviceWorker.register('./sw.js')
+                .then(reg => console.log('Service Worker re-registered'))
+                .catch(err => console.log('SW re-registration failed', err));
+        });
+    }
+}
+
+ensurePWAReady();
+// ========== حل مشكلة أيقونات PWA ==========
+async function ensurePWAReady() {
+    // 1. التحقق من وجود الأيقونات عبر محاولة تحميلها
+    const icon192Exists = await fetch('icons/icon-192x192.png').then(() => true).catch(() => false);
+    const icon512Exists = await fetch('icons/icon-512x512.png').then(() => true).catch(() => false);
+
+    if (icon192Exists && icon512Exists) {
+        console.log('الأيقونات موجودة مسبقاً');
+        return;
+    }
+
+    console.log('الأيقونات غير موجودة، سيتم إنشاؤها افتراضياً');
+
+    // 2. إنشاء أيقونات افتراضية باستخدام canvas
+    function createIcon(size) {
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+
+        // خلفية متدرجة
+        const grad = ctx.createLinearGradient(0, 0, size, size);
+        grad.addColorStop(0, '#1e3a8a');
+        grad.addColorStop(1, '#3b82f6');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, size, size);
+
+        // كتابة رمز كهرباء أو حرف
+        ctx.fillStyle = '#ffffff';
+        ctx.font = `bold ${size * 0.5}px "Tajawal", sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('⚡', size/2, size/2);
+
+        return canvas.toDataURL('image/png');
+    }
+
+    const icon192Data = createIcon(192);
+    const icon512Data = createIcon(512);
+
+    // 3. تخزين البيانات في localStorage للاستخدام الدائم
+    localStorage.setItem('pwa_icon_192', icon192Data);
+    localStorage.setItem('pwa_icon_512', icon512Data);
+
+    // 4. إنشاء manifest ديناميكي جديد
+    const dynamicManifest = {
+        name: "المحاسب Pro للكهرباء",
+        short_name: "محاسب Pro",
+        description: "نظام ذكي لإدارة فواتير الكهرباء والمشتركين",
+        start_url: "index.html",
+        display: "standalone",
+        background_color: "#1e3a8a",
+        theme_color: "#1e3a8a",
+        orientation: "portrait",
+        icons: [
+            { src: icon192Data, sizes: "192x192", type: "image/png", purpose: "any maskable" },
+            { src: icon512Data, sizes: "512x512", type: "image/png" }
+        ]
+    };
+
+    // 5. إنشاء رابط للـ manifest الجديد واستبداله
+    const manifestBlob = new Blob([JSON.stringify(dynamicManifest)], { type: 'application/json' });
+    const manifestURL = URL.createObjectURL(manifestBlob);
+    
+    const oldLink = document.querySelector('link[rel="manifest"]');
+    if (oldLink) oldLink.remove();
+    
+    const newLink = document.createElement('link');
+    newLink.rel = 'manifest';
+    newLink.href = manifestURL;
+    document.head.appendChild(newLink);
+
+    // 6. إعادة تسجيل Service Worker بعد تحديث الـ manifest
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(registrations => {
+            for(let reg of registrations) reg.unregister();
+        }).finally(() => {
+            navigator.serviceWorker.register('./sw.js')
+                .then(reg => console.log('Service Worker re-registered'))
+                .catch(err => console.log('SW re-registration failed', err));
+        });
+    }
+}
+
+// تنفيذ الدالة عند تحميل الصفحة
+ensurePWAReady();
+        window.onload = () => {
+            const saved = localStorage.getItem('elec_db');
+            if (saved) {
+                try { 
+                    const parsed = JSON.parse(saved);
+                    db = { ...db, ...parsed };
+                    db.subscribers.forEach(s => { if(s.initialReading === undefined) s.initialReading = 0; });
+                    if(!db.settings.print) db.settings.print = { headerColor: "#1e3a8a", headerText: "فاتورة كهرباء" };
+                } catch(e) {}
+            }
+            showPage('dashboard');
+            document.getElementById('pay-date').valueAsDate = new Date();
+        };
+
+        function saveData() { 
+            localStorage.setItem('elec_db', JSON.stringify(db)); 
+            updateDashboardAnalytics(); 
+        }
+
+        function showPage(pageId) {
+            document.querySelectorAll('.page-section').forEach(el => el.classList.remove('active'));
+            document.getElementById(pageId).classList.add('active');
+            
+            if(pageId === 'dashboard') updateDashboardAnalytics();
+            if(pageId === 'subscribers') renderSubs();
+            if(pageId === 'readings') initReadingsPage();
+            if(pageId === 'accounts') initAccountsPage();
+            if(pageId === 'settings') renderSettings();
+        }
+
+        // ==================== محرك التصدير الموحد ====================
+        function showUnifiedExport(htmlContent, pdfFilename, whatsappParams = null) {
+            const settings = db.settings.print;
+            const logoHtml = settings.logo ? `<img src="${settings.logo}" style="max-width:${settings.logoWidth}px; max-height:80px; margin-bottom:15px;">` : '';
+            const dateStr = settings.showDate !== false ? `<p class="text-muted small">تاريخ التصدير: ${new Date().toLocaleDateString('ar-EG')}</p>` : '';
+            
+            const finalHTML = `
+                <div style="color:${settings.textColor || '#000'}; font-family: 'Tajawal', sans-serif; background-color: #fff; padding: 20px;">
+                    <div class="print-header" style="border-bottom: 2px solid ${settings.headerColor || '#000'}; text-align:center;">
+                        ${logoHtml}
+                        <h2 style="color:${settings.headerColor || '#000'}; font-weight:bold;">${settings.headerText || 'المحاسب Pro'}</h2>
+                        ${dateStr}
+                    </div>
+                    <div style="margin-top: 20px;">
+                        ${htmlContent}
+                    </div>
+                    <div class="print-footer" style="margin-top: 30px; text-align:center; color:#666; font-size:12px; border-top:1px solid #ddd; padding-top:10px;">
+                        ${settings.footerText || ''}
+                    </div>
+                </div>
+            `;
+
+            document.getElementById('unifiedPreviewBody').innerHTML = finalHTML;
+            currentExportPayload = { html: finalHTML, filename: pdfFilename, whatsapp: whatsappParams };
+
+            const waBtn = document.getElementById('btn-export-whatsapp');
+            waBtn.onclick = () => {
+                let message = encodeURIComponent(whatsappParams ? whatsappParams.message : 'مرفق التفاصيل من نظام المحاسب');
+                let phone = (whatsappParams && whatsappParams.phone) ? whatsappParams.phone : '';
+                
+                if (phone) {
+                    phone = phone.startsWith('0') ? '+963' + phone.substring(1) : phone;
+                    window.open(`https://wa.me/${phone}?text=${message}`, '_blank');
+                } else {
+                    window.open(`https://wa.me/?text=${message}`, '_blank');
+                }
+            };
+
+            modals.unified.show();
+        }
+
+        document.getElementById('btn-export-pdf').onclick = function() {
+            const btn = this;
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> جاري الإنشاء...';
+            btn.disabled = true;
+
+            const element = document.getElementById('unifiedPreviewBody');
+
+            const opt = {
+                margin:       10,
+                filename:     currentExportPayload.filename || 'document.pdf',
+                image:        { type: 'jpeg', quality: 0.98 },
+                html2canvas:  { scale: 2, useCORS: true, logging: false, scrollY: 0 },
+                jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+            };
+
+            html2pdf().set(opt).from(element).save().then(() => {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }).catch((err) => {
+                console.error("PDF Error: ", err);
+                alert('حدث خطأ أثناء الإنشاء، يرجى المحاولة لاحقاً.');
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            });
+        };
+
+        document.getElementById('btn-share-pdf').onclick = async function() {
+            const btn = this;
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> جاري التجهيز...';
+            btn.disabled = true;
+
+            const element = document.getElementById('unifiedPreviewBody');
+            const opt = {
+                margin: 10, filename: currentExportPayload.filename || 'document.pdf',
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: { scale: 2, useCORS: true, scrollY: 0 },
+                jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+            };
+
+            try {
+                const pdfBlob = await html2pdf().set(opt).from(element).output('blob');
+                const file = new File([pdfBlob], currentExportPayload.filename, { type: 'application/pdf' });
+                
+                await navigator.share({
+                    title: currentExportPayload.filename,
+                    text: currentExportPayload.whatsapp ? currentExportPayload.whatsapp.message : 'مرفق المستند من النظام',
+                    files: [file]
+                });
+            } catch (err) {
+                console.log('Share failed or was cancelled', err);
+                alert('تعذرت المشاركة، يمكنك حفظ PDF ومشاركته يدوياً.');
+            } finally {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
+        };
+
+        document.getElementById('btn-export-print').onclick = function() {
+            const printContent = document.getElementById('unifiedPreviewBody').innerHTML;
+            const printWindow = window.open('', '_blank', 'width=900,height=700');
+            printWindow.document.write(`
+                <html lang="ar" dir="rtl">
+                <head>
+                    <title>طباعة - ${currentExportPayload.filename}</title>
+                    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.rtl.min.css" rel="stylesheet">
+                    <style>
+                        body { font-family: 'Tajawal', sans-serif; background: #fff; padding: 20px; }
+                        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+                        th, td { border: 1px solid #dee2e6; padding: 8px; text-align: center; }
+                        th { background-color: #f8f9fa !important; -webkit-print-color-adjust: exact; }
+                        .text-danger { color: #dc3545 !important; }
+                        .bg-warning { background-color: #ffc107 !important; -webkit-print-color-adjust: exact; }
+                    </style>
+                </head>
+                <body onload="window.print(); window.close();">${printContent}</body>
+                </html>
+            `);
+            printWindow.document.close();
+        };
+
+        // ==================== لوحة القيادة ====================
+        function getSubBalance(subId) {
+            let totalBilled = 0, totalPaid = 0;
+            db.readings.filter(r => r.subId === subId).forEach(r => totalBilled += (r.amount || 0));
+            db.payments.filter(p => p.subId === subId).forEach(p => totalPaid += p.amount);
+            let balance = totalBilled - totalPaid;
+            if (balance > 100000) {
+                balance = Math.round(balance / 1000) * 1000;
+            }
+            return balance;
+        }
+        function formatMoney(num) { return Number(num).toLocaleString('en-US'); }
+        function formatNum(num) { return Number(num).toFixed(2).replace(/\.00$/, ''); }
+
+        function updateDashboardAnalytics() {
+            document.getElementById('dash-subs-count').innerText = db.subscribers.length;
+            document.getElementById('dash-months-count').innerText = db.months.length;
+            
+            let totalDebt = 0;
+            let subBalances = [];
+            db.subscribers.forEach(sub => {
+                let bal = getSubBalance(sub.id);
+                if(bal > 0) totalDebt += bal;
+                subBalances.push({sub, bal});
+            });
+            document.getElementById('dash-total-debt').innerText = formatMoney(totalDebt) + ' ل.س';
+
+            let defaultersHtml = '';
+            let sortedDefs = subBalances.filter(x => x.bal > 0).sort((a,b) => b.bal - a.bal).slice(0, 5);
+            if(sortedDefs.length === 0) {
+                defaultersHtml = '<tr><td colspan="4" class="text-success"><i class="fa-solid fa-check-circle"></i> الوضع المالي ممتاز، لا توجد ديون.</td></tr>';
+            } else {
+                sortedDefs.forEach(d => {
+                    defaultersHtml += `<tr>
+                        <td class="fw-bold">${d.sub.name}</td><td><a href="https://wa.me/${(d.sub.phone||'').replace(/^0/,'+963')}" target="_blank" class="text-decoration-none">${d.sub.phone||'-'}</a></td>
+                        <td class="text-danger fw-bold fs-6">${formatMoney(d.bal)}</td>
+                        <td><button class="btn btn-sm btn-outline-info" onclick="viewAccountFromDash('${d.sub.id}')">كشف حساب</button></td>
+                    </tr>`;
+                });
+            }
+            document.getElementById('dash-defaulters-tbody').innerHTML = defaultersHtml;
+
+            if(db.months.length >= 2) {
+                let currentM = db.months[db.months.length - 1];
+                let prevM = db.months[db.months.length - 2];
+                document.getElementById('comp-months-labels').innerText = `${currentM.name} مقارنة بـ ${prevM.name}`;
+                
+                let curTotal = db.readings.filter(r => r.monthId === currentM.id).reduce((sum, r) => sum + (r.totalKwh||0), 0);
+                let prevTotal = db.readings.filter(r => r.monthId === prevM.id).reduce((sum, r) => sum + (r.totalKwh||0), 0);
+                
+                document.getElementById('comp-current-kwh').innerText = formatNum(curTotal) + ' Kwh';
+                
+                let diff = curTotal - prevTotal;
+                let percent = prevTotal > 0 ? (diff / prevTotal) * 100 : 0;
+                
+                if(diff > 0) {
+                    document.getElementById('comp-trend').innerHTML = `<span class="trend-indicator text-danger bg-danger bg-opacity-10"><i class="fa-solid fa-arrow-trend-up"></i> زيادة بنسبة ${percent.toFixed(1)}%</span>`;
+                } else if(diff < 0) {
+                    document.getElementById('comp-trend').innerHTML = `<span class="trend-indicator text-success bg-success bg-opacity-10"><i class="fa-solid fa-arrow-trend-down"></i> انخفاض بنسبة ${Math.abs(percent).toFixed(1)}%</span>`;
+                } else {
+                    document.getElementById('comp-trend').innerHTML = `<span class="trend-indicator text-secondary bg-secondary bg-opacity-10"><i class="fa-solid fa-minus"></i> استهلاك مستقر</span>`;
+                }
+            }
+
+            if(db.months.length > 0) {
+                let lastMDate = new Date(db.months[db.months.length-1].date);
+                let today = new Date();
+                let diffDays = Math.floor((today - lastMDate) / (1000 * 60 * 60 * 24));
+                let statusEl = document.getElementById('dash-cycle-status');
+                
+                if(diffDays >= 30) {
+                    statusEl.innerHTML = `<span class="text-warning"><i class="fa-solid fa-bell"></i> مستحقة الآن! (${diffDays} يوم)</span>`;
+                } else {
+                    statusEl.innerText = `متبقي ${30 - diffDays} يوم`;
+                }
+            }
+
+            if(db.months.length > 0) {
+                let lastMId = db.months[db.months.length - 1].id;
+                let topReads = db.readings.filter(r => r.monthId === lastMId).sort((a,b) => (b.totalKwh||0) - (a.totalKwh||0)).slice(0, 5);
+                
+                let labels = topReads.map(r => { let s = db.subscribers.find(x=>x.id===r.subId); return s ? s.name : 'مجهول'; });
+                let dataKwh = topReads.map(r => r.totalKwh || 0);
+
+                if(topChartInstance) topChartInstance.destroy();
+                let ctx = document.getElementById('topConsumersChart').getContext('2d');
+                topChartInstance = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'إجمالي الاستهلاك (Kwh)',
+                            data: dataKwh,
+                            backgroundColor: 'rgba(59, 130, 246, 0.7)',
+                            borderColor: 'rgba(29, 78, 216, 1)',
+                            borderWidth: 1,
+                            borderRadius: 6
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
+                });
+            }
+        }
+
+        function viewAccountFromDash(subId) {
+            showPage('accounts');
+            document.getElementById('acc-sub-select').value = subId;
+            renderAccount();
+        }
+
+        // ==================== التصدير ====================
+        function exportSubscriberCard(id) {
+            const sub = db.subscribers.find(s => s.id === id);
+            if (!sub) return;
+            const balance = getSubBalance(id);
+            let rows = '';
+            db.readings.filter(r => r.subId === id).sort((a,b) => b.monthId.localeCompare(a.monthId)).forEach(r => {
+                const m = db.months.find(x => x.id === r.monthId);
+                rows += `<tr><td>${m ? m.name : '-'}</td><td>${formatNum(r.totalKwh)}</td><td>${formatMoney(r.amount)}</td></tr>`;
+            });
+
+            const html = `
+                <div class="row mb-4">
+                    <div class="col-6"><h4 class="text-primary">${sub.name}</h4><p class="text-muted">${sub.phone||'بدون رقم'}</p></div>
+                    <div class="col-6 text-start"><h5 class="text-danger">الرصيد: ${formatMoney(balance)} ل.س</h5></div>
+                </div>
+                <table class="table table-bordered table-striped text-center">
+                    <thead class="table-dark"><tr><th>الشهر</th><th>الاستهلاك (Kwh)</th><th>قيمة الفاتورة (ل.س)</th></tr></thead>
+                    <tbody>${rows || '<tr><td colspan="3">لا يوجد سجلات</td></tr>'}</tbody>
+                </table>
+            `;
+            
+            let waMsg = `بطاقة المشترك: ${sub.name}\nالرصيد الحالي المطلوب: ${formatMoney(balance)} ل.س\nيرجى تسديد الذمم المترتبة، شكراً لك.`;
+            showUnifiedExport(html, `بطاقة_${sub.name}.pdf`, { phone: sub.phone, message: waMsg });
+        }
+
+        function exportSingleReading(subId, monthId) {
+            const sub = db.subscribers.find(s => s.id === subId);
+            const month = db.months.find(m => m.id === monthId);
+            const r = db.readings.find(x => x.monthId === monthId && x.subId === subId);
+            if (!sub || !month || !r) return;
+
+            let currentPrice = month.price || db.settings.price;
+
+            const html = `
+                <h3 class="text-center mb-4">إشعار فاتورة كهرباء - ${month.name}</h3>
+                <div class="row fs-5 mb-4">
+                    <div class="col-md-6 mb-2"><strong>المشترك:</strong> ${sub.name}</div>
+                    <div class="col-md-6 mb-2"><strong>الجوال:</strong> ${sub.phone || '-'}</div>
+                    <div class="col-md-6 mb-2"><strong>القراءة السابقة:</strong> ${r.prev}</div>
+                    <div class="col-md-6 mb-2"><strong>القراءة الحالية:</strong> ${r.curr}</div>
+                </div>
+                <table class="table table-bordered text-center">
+                    <thead class="table-light">
+                        <tr><th>الاستهلاك الخام</th><th>الفرق المضاف</th><th>الهدر المضاف</th><th>تعديل</th><th>الإجمالي (Kwh)</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>${formatNum(r.cons)}</td><td>${formatNum(r.shareDiff)}</td><td>${formatNum(r.shareWaste)}</td><td>${r.adjustment||0}</td><td class="fw-bold">${formatNum(r.totalKwh)}</td></tr>
+                    </tbody>
+                </table>
+                <table class="table text-center mt-3 w-75 mx-auto table-sm border">
+                    <tr><td class="text-end fw-bold bg-light w-50">قيمة الاستهلاك (بمعدل ${currentPrice} ل.س)</td><td>${formatMoney(r.totalKwh * currentPrice)}</td></tr>
+                    <tr><td class="text-end fw-bold bg-light">المياه الثابتة</td><td>${formatMoney(sub.water)}</td></tr>
+                    <tr><td class="text-end fw-bold bg-light">الغرامات</td><td>${formatMoney(r.fines||0)}</td></tr>
+                    <tr class="table-warning"><td class="text-end fw-bold fs-5">الصافي المطلوب</td><td class="text-danger fw-bold fs-5">${formatMoney(r.amount)} ل.س</td></tr>
+                </table>
+            `;
+
+            let waMsg = (db.settings.whatsappBill || "مرحباً {name}، فاتورة {month} هي {amount} ل.س").replace(/{name}/g, sub.name).replace(/{month}/g, month.name).replace(/{amount}/g, formatMoney(r.amount));
+            showUnifiedExport(html, `فاتورة_${sub.name}_${month.name}.pdf`, { phone: sub.phone, message: waMsg });
+        }
+
+        function exportFullMonthlyReport() {
+            const monthId = document.getElementById('month-select').value;
+            const month = db.months.find(m => m.id === monthId);
+            if (!month) return alert('الرجاء تحديد الشهر');
+            
+            const subsList = calculateCurrentMonth();
+            let rows = '', totalAmt = 0, totalKwh = 0;
+            
+            subsList.forEach(item => {
+                let d = item.calcData;
+                totalAmt += d.amount; totalKwh += d.totalKwh;
+                rows += `<tr><td>${item.sub.name}</td><td>${d.prev}</td><td>${d.curr}</td><td>${formatNum(d.cons)}</td><td>${formatNum(d.shareDiff+d.shareWaste)}</td><td class="fw-bold">${formatNum(d.totalKwh)}</td><td class="text-danger fw-bold">${formatMoney(d.amount)}</td></tr>`;
+            });
+
+            const html = `
+                <h3 class="text-center mb-4 border-bottom pb-2">التقرير الاستهلاكي والمالي - ${month.name}</h3>
+                <div class="row mb-3 text-center">
+                    <div class="col-6"><div class="p-2 border bg-light rounded">إجمالي الاستهلاك: <strong>${formatNum(totalKwh)} Kwh</strong></div></div>
+                    <div class="col-6"><div class="p-2 border bg-light rounded">إجمالي المطالبات: <strong>${formatMoney(totalAmt)} ل.س</strong></div></div>
+                </div>
+                <table class="table table-bordered table-striped text-center align-middle" style="font-size:14px;">
+                    <thead class="table-dark"><tr><th>المشترك</th><th>السابقة</th><th>الحالية</th><th>الصافي</th><th>هدر وفرق</th><th>ك.و النهائي</th><th>المبلغ المطلوب</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            `;
+            
+            let waMsg = `التقرير الشهري الشامل لشهر ${month.name}\nإجمالي الاستهلاك: ${formatNum(totalKwh)} Kwh\nإجمالي المطالبات: ${formatMoney(totalAmt)} ل.س`;
+            showUnifiedExport(html, `تقرير_شامل_${month.name}.pdf`, { phone: '', message: waMsg });
+        }
+
+        function exportMonthlyDuesReport() {
+            const monthId = document.getElementById('month-select').value;
+            const month = db.months.find(m => m.id === monthId);
+            if (!month) return;
+            const subsList = calculateCurrentMonth();
+            let rows = '', total = 0;
+            subsList.forEach(item => {
+                if(item.calcData.amount > 0) {
+                    total += item.calcData.amount;
+                    rows += `<tr><td class="text-end pe-4">${item.sub.name}</td><td class="text-start ps-4 fw-bold fs-5">${formatMoney(item.calcData.amount)}</td></tr>`;
+                }
+            });
+            const html = `
+                <h3 class="text-center mb-4">كشف المبالغ المطلوبة - ${month.name}</h3>
+                <table class="table table-bordered text-center w-75 mx-auto">
+                    <thead class="table-light"><tr><th>الاسم</th><th>المبلغ (ل.س)</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                    <tfoot class="table-warning"><tr><th class="text-end pe-4 fs-4">المجموع الكلي</th><th class="text-start ps-4 fs-4 text-danger">${formatMoney(total)}</th></tr></tfoot>
+                </table>
+            `;
+            
+            let waMsg = `كشف الاستحقاقات لشهر ${month.name}\nإجمالي المبالغ المطلوبة: ${formatMoney(total)} ل.س`;
+            showUnifiedExport(html, `استحقاقات_${month.name}.pdf`, { phone: '', message: waMsg });
+        }
+
+        function exportAccountStatement() {
+            const subId = document.getElementById('acc-sub-select').value;
+            const sub = db.subscribers.find(s => s.id === subId);
+            if (!sub) return alert('الرجاء اختيار المشترك');
+            
+            let ledger = [];
+            db.readings.filter(r => r.subId === sub.id).forEach(r => {
+                let m = db.months.find(x => x.id === r.monthId);
+                if(r.amount > 0) ledger.push({ date: `فاتورة ${m?m.name:''}`, req: r.amount, paid: 0, sortId: m?m.id:'' });
+            });
+            db.payments.filter(p => p.subId === sub.id).forEach(p => {
+                ledger.push({ date: p.date + '<br><small>'+p.note+'</small>', req: 0, paid: p.amount, sortId: p.id });
+            });
+            ledger.sort((a,b) => a.sortId.localeCompare(b.sortId));
+
+            let rows = '';
+            ledger.forEach(r => {
+                rows += `<tr><td>${r.date}</td><td class="text-danger fw-bold">${r.req>0?formatMoney(r.req):'-'}</td><td class="text-success fw-bold">${r.paid>0?formatMoney(r.paid):'-'}</td></tr>`;
+            });
+
+            const html = `
+                <h3 class="text-center mb-4">كشف حساب مالي تفصيلي</h3>
+                <div class="row fs-5 mb-3 border-bottom pb-2">
+                    <div class="col-6"><strong>السيد/ة:</strong> ${sub.name}</div>
+                    <div class="col-6 text-start text-danger"><strong>الرصيد المتبقي:</strong> ${formatMoney(getSubBalance(sub.id))} ل.س</div>
+                </div>
+                <table class="table table-bordered table-striped text-center align-middle">
+                    <thead class="table-dark"><tr><th>البيان / التاريخ</th><th>المطلوب الدفع</th><th>المبالغ المسددة</th></tr></thead>
+                    <tbody>${rows||'<tr><td colspan="3">لا توجد حركات مالية</td></tr>'}</tbody>
+                </table>
+            `;
+
+            let waMsg = (db.settings.whatsappAccount || "الرصيد الحالي: {balance} ل.س").replace(/{name}/g, sub.name).replace(/{balance}/g, formatMoney(getSubBalance(sub.id)));
+            showUnifiedExport(html, `كشف_حساب_${sub.name}.pdf`, { phone: sub.phone, message: waMsg });
+        }
+
+        // ==================== المشتركين ====================
+        function renderSubs() {
+            const tbody = document.getElementById('subs-tbody');
+            if (!tbody) return;
+            tbody.innerHTML = '';
+            db.subscribers.forEach(sub => {
+                let balance = getSubBalance(sub.id);
+                tbody.innerHTML += `<tr><td class="fw-bold text-primary">${sub.name}</td><td dir="ltr">${sub.phone||'-'}</td><td>${sub.mult}</td><td>${sub.shareWaste?'نعم':'لا'}</td><td>${sub.shareDiff?'نعم':'لا'}</td><td>${formatMoney(sub.water)}</td><td>${sub.initialReading || 0}</td><td class="${balance>0?'text-danger fw-bold':''}">${formatMoney(balance)}</td>
+                <td><button class="btn btn-sm btn-info" onclick="exportSubscriberCard('${sub.id}')" title="بطاقة وتقارير"><i class="fa-solid fa-file-contract"></i></button>
+                <button class="btn btn-sm btn-primary" onclick="editSub('${sub.id}')"><i class="fa-solid fa-pen"></i></button>
+                <button class="btn btn-sm btn-danger" onclick="deleteSub('${sub.id}')"><i class="fa-solid fa-trash"></i></button></td></tr>`;
+            });
+        }
+
+        function openSubModal() { 
+            document.getElementById('sub-id').value=''; 
+            document.getElementById('sub-name').value=''; 
+            document.getElementById('sub-phone').value=''; 
+            document.getElementById('sub-mult').value='1'; 
+            document.getElementById('sub-water').value='0';
+            document.getElementById('sub-initial').value='0';
+            modals.sub.show(); 
+        }
+
+        function editSub(id) { 
+            const s = db.subscribers.find(x=>x.id===id); 
+            if(s){ 
+                document.getElementById('sub-id').value=s.id; 
+                document.getElementById('sub-name').value=s.name; 
+                document.getElementById('sub-phone').value=s.phone||''; 
+                document.getElementById('sub-mult').value=s.mult; 
+                document.getElementById('sub-water').value=s.water||0; 
+                document.getElementById('sub-initial').value=s.initialReading || 0;
+                document.getElementById('sub-waste').checked=s.shareWaste; 
+                document.getElementById('sub-diff').checked=s.shareDiff; 
+                modals.sub.show(); 
+            } 
+        }
+
+        function saveSubscriber() {
+            const id = document.getElementById('sub-id').value;
+            const subData = { 
+                id: id ? id : 'sub' + Date.now(), 
+                name: document.getElementById('sub-name').value.trim(), 
+                phone: document.getElementById('sub-phone').value.trim(), 
+                mult: parseFloat(document.getElementById('sub-mult').value)||1, 
+                water: parseFloat(document.getElementById('sub-water').value)||0, 
+                initialReading: parseFloat(document.getElementById('sub-initial').value)||0,
+                shareWaste: document.getElementById('sub-waste').checked, 
+                shareDiff: document.getElementById('sub-diff').checked 
+            };
+            if(!subData.name) return alert('أدخل الاسم');
+            if(id) { 
+                const i = db.subscribers.findIndex(s=>s.id===id); 
+                if(i!==-1) db.subscribers[i] = subData; 
+            } else db.subscribers.push(subData);
+            saveData(); 
+            modals.sub.hide(); 
+            renderSubs();
+        }
+
+        function deleteSub(id) { 
+            if(confirm('حذف نهائي للمشترك وبياناته؟')) { 
+                db.subscribers=db.subscribers.filter(s=>s.id!==id); 
+                db.readings=db.readings.filter(r=>r.subId!==id); 
+                db.payments=db.payments.filter(p=>p.subId!==id); 
+                saveData(); 
+                renderSubs(); 
+            } 
+        }
+
+        // ==================== القراءات والفواتير ====================
+        function initReadingsPage() {
+            document.getElementById('lbl-trans-mult').innerText = db.settings.transMult; 
+            document.getElementById('lbl-main-mult').innerText = db.settings.mainMult; 
+            const sel = document.getElementById('month-select'); 
+            sel.innerHTML = '<option value="">-- اختر الشهر --</option>';
+            db.months.forEach(m => sel.innerHTML += `<option value="${m.id}">${m.name}</option>`);
+            if(db.months.length > 0) { 
+                sel.value = db.months[db.months.length - 1].id; 
+                loadMonthData(); 
+            } else { 
+                document.getElementById('readings-content').style.display='none'; 
+                document.getElementById('no-month-msg').style.display='block'; 
+            }
+        }
+
+        function createNewMonth() {
+            const name = prompt('اسم الشهر:'); 
+            if(!name) return;
+            
+            let monthPriceRaw = prompt('أدخل سعر الكيلو واط لهذا الشهر (ل.س):', db.settings.price);
+            let monthPrice = db.settings.price;
+            if(monthPriceRaw && !isNaN(monthPriceRaw)) {
+                monthPrice = parseFloat(monthPriceRaw);
+            }
+
+            let mId = 'month' + Date.now(), lastT=0, lastM=0;
+            if(db.months.length>0) { 
+                let lm = db.months[db.months.length-1]; 
+                lastT=lm.transCurr||0; 
+                lastM=lm.mainCurr||0; 
+            }
+            db.months.push({ id: mId, name: name, price: monthPrice, transPrev: lastT, transCurr: lastT, mainPrev: lastM, mainCurr: lastM, date: new Date().toISOString() });
+            
+            db.subscribers.forEach(sub => {
+                let pR = db.readings.filter(r=>r.subId===sub.id).sort((a,b)=>b.monthId.localeCompare(a.monthId));
+                let lastC = pR.length>0 ? pR[0].curr : (sub.initialReading || 0); 
+                db.readings.push({ 
+                    id:'read'+sub.id+mId, 
+                    monthId: mId, 
+                    subId: sub.id, 
+                    prev: lastC, 
+                    curr: lastC, 
+                    adjustment:0, 
+                    fines:0, 
+                    cons:0, 
+                    shareWaste:0, 
+                    shareDiff:0, 
+                    totalKwh:0, 
+                    amount:0 
+                });
+            });
+            saveData(); 
+            initReadingsPage(); 
+            document.getElementById('month-select').value = mId; 
+            loadMonthData();
+        }
+
+        function editMonthPrice() {
+            const mId = document.getElementById('month-select').value;
+            if(!mId) return alert('الرجاء اختيار شهر أولاً');
+            const m = db.months.find(x => x.id === mId);
+            if(!m) return;
+            let currentPrice = m.price || db.settings.price;
+            let newPrice = prompt(`تعديل سعر الكيلو واط لشهر (${m.name}):`, currentPrice);
+            if(newPrice && !isNaN(newPrice)) {
+                m.price = parseFloat(newPrice);
+                saveData();
+                loadMonthData();
+                alert('تم تحديث السعر وإعادة الحساب بنجاح.');
+            }
+        }
+
+        function loadMonthData() {
+            const mId = document.getElementById('month-select').value;
+            if(!mId){ 
+                document.getElementById('readings-content').style.display='none'; 
+                document.getElementById('no-month-msg').style.display='block';
+                return; 
+            }
+            document.getElementById('readings-content').style.display='block'; 
+            document.getElementById('no-month-msg').style.display='none';
+            const m = db.months.find(x=>x.id===mId);
+            if(m) { 
+                document.getElementById('trans-prev').value=m.transPrev; 
+                document.getElementById('trans-curr').value=m.transCurr; 
+                document.getElementById('main-prev').value=m.mainPrev; 
+                document.getElementById('main-curr').value=m.mainCurr; 
+                document.getElementById('lbl-kwh-price').innerText = m.price || db.settings.price;
+            }
+            const tbody = document.getElementById('readings-tbody'); 
+            tbody.innerHTML = '';
+            db.subscribers.forEach(sub => {
+                let r = db.readings.find(x=>x.monthId===mId && x.subId===sub.id);
+                tbody.innerHTML += `<tr><td class="fw-bold">${sub.name}</td>
+                <td><input type="number" class="form-control form-control-sm in-curr border-primary" data-sub="${sub.id}" value="${r ? r.curr : 0}" oninput="calculateCurrentMonth()"></td>
+                <td><input type="number" class="form-control form-control-sm in-prev" value="${r ? r.prev : 0}" ${manualEditMode ? '' : 'readonly'}></td>
+                <td class="out-cons fw-bold">0</td>
+                <td><input type="number" class="form-control form-control-sm in-adj border-warning" data-sub="${sub.id}" value="${r ? r.adjustment : 0}" oninput="calculateCurrentMonth()"></td>
+                <td class="out-diff">0</td><td class="out-diff-p">0%</td><td class="out-waste">0</td><td class="out-waste-p">0%</td>
+                <td class="out-totalkwh text-primary fw-bold">0</td>
+                <td><input type="number" class="form-control form-control-sm in-fines text-danger" data-sub="${sub.id}" value="${r ? r.fines : 0}" oninput="calculateCurrentMonth()"></td>
+                <td>${sub.water}</td><td class="out-amount bg-warning fw-bold">0</td>
+                <td><button class="btn btn-sm btn-dark" onclick="exportSingleReading('${sub.id}','${mId}')"><i class="fa-solid fa-file-export"></i> مشاركة وإصدار</button></td></tr>`;
+            });
+            calculateCurrentMonth();
+        }
+
+        function editMonthData() {
+            const mId = document.getElementById('month-select').value;
+            if(!mId) { alert('الرجاء اختيار شهر أولاً'); return; }
+            alert('يمكنك الآن تعديل القراءات، وعند الحفظ ستظهر رسالة تأكيد لأن التعديل سيؤثر على الأرصدة.');
+        }
+
+        function toggleManualEdit() {
+            manualEditMode = !manualEditMode;
+            const inputs = document.querySelectorAll('#readings-tbody .in-prev');
+            inputs.forEach(inp => {
+                if (manualEditMode) {
+                    inp.removeAttribute('readonly');
+                } else {
+                    inp.setAttribute('readonly', true);
+                }
+            });
+            document.getElementById('manual-warning').style.display = manualEditMode ? 'block' : 'none';
+        }
+
+        function calculateCurrentMonth() {
+            const mId = document.getElementById('month-select').value; 
+            if(!mId) return null;
+
+            let currentMonth = db.months.find(m => m.id === mId);
+            let currentMonthPrice = currentMonth ? (currentMonth.price || db.settings.price) : db.settings.price;
+
+            let tP=parseFloat(document.getElementById('trans-prev').value)||0, tC=parseFloat(document.getElementById('trans-curr').value)||0;
+            let mP=parseFloat(document.getElementById('main-prev').value)||0, mC=parseFloat(document.getElementById('main-curr').value)||0;
+            let transCons=Math.max(0,(tC-tP)*db.settings.transMult), mainCons=Math.max(0,(mC-mP)*db.settings.mainMult);
+            document.getElementById('trans-cons').innerText=formatNum(transCons); 
+            document.getElementById('main-cons').innerText=formatNum(mainCons);
+            let meterDiff=Math.max(0, transCons-mainCons), subsList=[], sumAll=0, sumDiffOptions=0, sumWasteOptions=0, sumWasteSum=0;
+            
+            document.querySelectorAll('#readings-tbody tr').forEach(tr => {
+                let subId = tr.querySelector('.in-curr')?.getAttribute('data-sub');
+                let sub = db.subscribers.find(s=>s.id===subId); 
+                if(!sub) return;
+                let prev=parseFloat(tr.querySelector('.in-prev').value)||0, curr=parseFloat(tr.querySelector('.in-curr').value)||0;
+                let adj=parseFloat(tr.querySelector('.in-adj').value)||0, fines=parseFloat(tr.querySelector('.in-fines').value)||0;
+                let raw = Math.max(0, ((curr-prev)*sub.mult) + adj);
+                subsList.push({tr, sub, prev, curr, adj, raw, fines});
+            });
+
+            let eyad = subsList.find(i=>i.sub.name.includes('إياد') || i.sub.name.includes('اياد'));
+            let pump = subsList.find(i=>i.sub.name.includes('غاطس'));
+            if(eyad && pump) pump.raw = Math.max(0, pump.raw - eyad.raw);
+
+            subsList.forEach(i => {
+                sumAll+=i.raw; 
+                if(i.sub.shareDiff) sumDiffOptions+=i.raw; 
+                if(i.sub.shareWaste) { sumWasteOptions+=i.raw; sumWasteSum+=i.raw; }
+            });
+
+            let cableWaste = Math.max(0, transCons - (sumAll + meterDiff));
+            document.getElementById('calc-diff').innerText=formatNum(meterDiff); 
+            document.getElementById('calc-waste').innerText=formatNum(cableWaste);
+            document.getElementById('calc-subs-total').innerText=formatNum(sumAll); 
+            document.getElementById('calc-waste-sum').innerText=formatNum(sumWasteSum);
+
+            subsList.forEach(i => {
+                let sD=0, sW=0;
+                if(i.sub.shareDiff && sumDiffOptions>0) sD = meterDiff*(i.raw/sumDiffOptions);
+                if(i.sub.shareWaste && sumWasteOptions>0) sW = cableWaste*(i.raw/sumWasteOptions);
+                let tk = i.raw + sD + sW;
+                
+                let amt = (tk * currentMonthPrice) + i.fines + i.sub.water;
+                
+                if (amt > 100000) {
+                    amt = Math.round(amt / 1000) * 1000;
+                }
+                
+                i.tr.querySelector('.out-cons').innerText=formatNum(i.raw); 
+                i.tr.querySelector('.out-diff').innerText=formatNum(sD);
+                i.tr.querySelector('.out-waste').innerText=formatNum(sW); 
+                i.tr.querySelector('.out-totalkwh').innerText=formatNum(tk);
+                i.tr.querySelector('.out-amount').innerText=formatMoney(Math.round(amt));
+                i.calcData = { prev:i.prev, curr:i.curr, adjustment:i.adj, fines:i.fines, cons:i.raw, shareDiff:sD, shareWaste:sW, totalKwh:tk, amount:Math.round(amt) };
+            });
+            return subsList;
+        }
+
+        function saveMonthData() {
+            const mId = document.getElementById('month-select').value; 
+            if(!mId) return;
+
+            const existingReadings = db.readings.filter(r => r.monthId === mId && r.amount > 0);
+            if(existingReadings.length > 0) {
+                if(!confirm('تحذير: تعديل بيانات هذا الشهر سيؤدي إلى إعادة حساب الفواتير وسيؤثر على الأرصدة السابقة. هل تريد المتابعة؟')) {
+                    return;
+                }
+            }
+
+            const m = db.months.find(x=>x.id===mId);
+            if(m) { 
+                m.transPrev=parseFloat(document.getElementById('trans-prev').value)||0; 
+                m.transCurr=parseFloat(document.getElementById('trans-curr').value)||0; 
+                m.mainPrev=parseFloat(document.getElementById('main-prev').value)||0; 
+                m.mainCurr=parseFloat(document.getElementById('main-curr').value)||0; 
+            }
+            const res = calculateCurrentMonth();
+            if(res) {
+                res.forEach(r => {
+                    let reading = db.readings.find(x=>x.monthId===mId && x.subId===r.sub.id);
+                    if(reading) Object.assign(reading, r.calcData);
+                });
+            }
+            saveData(); 
+            alert('تم حفظ الفواتير بنجاح');
+        }
+
+        function deleteMonth() {
+            const mId = document.getElementById('month-select').value;
+            if (!mId) return alert('الرجاء اختيار شهر أولاً');
+            const month = db.months.find(m => m.id === mId);
+            if (!month) return;
+
+            if (!confirm(`هل أنت متأكد من حذف شهر "${month.name}"؟ هذه العملية لا يمكن التراجع عنها وستحذف جميع قراءات الشهر.`)) return;
+            
+            const confirmText = prompt('اكتب "حذف" لتأكيد الحذف:');
+            if (confirmText !== 'حذف') {
+                alert('لم يتم التأكيد. عملية الحذف ملغاة.');
+                return;
+            }
+
+            db.months = db.months.filter(m => m.id !== mId);
+            db.readings = db.readings.filter(r => r.monthId !== mId);
+
+            saveData();
+            initReadingsPage(); 
+            alert('تم حذف الشهر وجميع قراءاته بنجاح');
+        }
+
+        // ==================== كشوف الحساب ====================
+        function initAccountsPage() {
+            const sel = document.getElementById('acc-sub-select'); 
+            sel.innerHTML = '<option value="">-- اختر المشترك --</option>';
+            db.subscribers.forEach(s => sel.innerHTML += `<option value="${s.id}">${s.name}</option>`);
+        }
+
+        function renderAccount() {
+            const id = document.getElementById('acc-sub-select').value; 
+            if(!id) { 
+                document.getElementById('account-content').style.display='none'; 
+                document.getElementById('acc-actions').style.display='none'; 
+                return; 
+            }
+            const sub = db.subscribers.find(s=>s.id===id); 
+            document.getElementById('acc-name').innerText=sub.name; 
+            document.getElementById('acc-phone').innerText=sub.phone||'-'; 
+            document.getElementById('acc-balance').innerText=formatMoney(getSubBalance(id));
+            document.getElementById('account-content').style.display='block'; 
+            document.getElementById('acc-actions').style.display='block';
+            
+            let l = [];
+            db.readings.filter(r=>r.subId===id && r.amount>0).forEach(r => { 
+                let m=db.months.find(x=>x.id===r.monthId); 
+                l.push({d:`فاتورة ${m?m.name:''}`, t:'bill', aReq:r.amount, aPaid:0, sid:m?m.id:''}); 
+            });
+            db.payments.filter(p=>p.subId===id).forEach(p => { 
+                l.push({d:`${p.date} <br><small class="text-muted">${p.note}</small>`, t:'pay', aReq:0, aPaid:p.amount, sid:p.id, pid:p.id}); 
+            });
+            l.sort((a,b)=>a.sid.localeCompare(b.sid));
+            
+            const tb = document.getElementById('acc-tbody'); 
+            tb.innerHTML='';
+            l.forEach(r => tb.innerHTML += `<tr><td>${r.d}</td><td>${r.t==='bill'?'<span class="badge bg-danger">فاتورة</span>':'<span class="badge bg-success">دفعة</span>'}</td><td class="text-danger fw-bold">${r.aReq>0?formatMoney(r.aReq):'-'}</td><td class="text-success fw-bold">${r.aPaid>0?formatMoney(r.aPaid):'-'}</td><td>${r.t==='pay'?`<button class="btn btn-sm btn-danger" onclick="deletePayment('${r.pid}')"><i class="fa-solid fa-trash"></i></button>`:'-'}</td></tr>`);
+        }
+
+        function openPaymentModal() { 
+            document.getElementById('pay-id').value=''; 
+            document.getElementById('pay-amount').value=''; 
+            document.getElementById('pay-date').valueAsDate = new Date(); 
+            modals.payment.show(); 
+        }
+
+        function savePayment() {
+            const amt = parseFloat(document.getElementById('pay-amount').value); 
+            if(!amt||amt<=0) return;
+            db.payments.push({ 
+                id:'pay'+Date.now(), 
+                subId: document.getElementById('acc-sub-select').value, 
+                amount: amt, 
+                date: document.getElementById('pay-date').value, 
+                note: document.getElementById('pay-note').value 
+            });
+            saveData(); 
+            modals.payment.hide(); 
+            renderAccount();
+        }
+
+        function deletePayment(pid) { 
+            if(confirm('متأكد من حذف الدفعة؟')) { 
+                db.payments = db.payments.filter(p=>p.id!==pid); 
+                saveData(); 
+                renderAccount(); 
+            } 
+        }
+
+        // ==================== الإعدادات ====================
+        function renderSettings() {
+            document.getElementById('set-price').value = db.settings.price; 
+            document.getElementById('set-trans-mult').value = db.settings.transMult; 
+            document.getElementById('set-main-mult').value = db.settings.mainMult;
+            document.getElementById('whatsapp-bill-template').value = db.settings.whatsappBill; 
+            document.getElementById('whatsapp-account-template').value = db.settings.whatsappAccount;
+            document.getElementById('logo-width').value = db.settings.print.logoWidth; 
+            document.getElementById('print-header-color').value = db.settings.print.headerColor; 
+            document.getElementById('print-header-text').value = db.settings.print.headerText;
+            if(db.settings.print.logo) { 
+                document.getElementById('logo-preview').src = db.settings.print.logo; 
+                document.getElementById('logo-preview').style.display = 'block'; 
+            }
+        }
+
+        function handleLogoUpload(e) { 
+            const f = e.target.files[0]; 
+            if(f){ 
+                const r=new FileReader(); 
+                r.onload=function(ev){ 
+                    document.getElementById('logo-preview').src=ev.target.result; 
+                    document.getElementById('logo-preview').style.display='block'; 
+                    db.settings.print.logo=ev.target.result; 
+                }; 
+                r.readAsDataURL(f); 
+            } 
+        }
+
+        function saveSettings() {
+            db.settings.price=parseFloat(document.getElementById('set-price').value); 
+            db.settings.transMult=parseFloat(document.getElementById('set-trans-mult').value); 
+            db.settings.mainMult=parseFloat(document.getElementById('set-main-mult').value);
+            db.settings.whatsappBill=document.getElementById('whatsapp-bill-template').value; 
+            db.settings.whatsappAccount=document.getElementById('whatsapp-account-template').value;
+            db.settings.print.logoWidth=parseInt(document.getElementById('logo-width').value); 
+            db.settings.print.headerColor=document.getElementById('print-header-color').value; 
+            db.settings.print.headerText=document.getElementById('print-header-text').value;
+            saveData(); 
+            alert('تم الحفظ');
+        }
+
+        // ==================== استيراد/تصدير ====================
+        function exportExcel() {
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(db.subscribers), "المشتركون");
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(db.months), "الأشهر");
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(db.readings), "القراءات");
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(db.payments), "الدفعات");
+            XLSX.writeFile(wb, "بيانات_الكهرباء.xlsx");
+        }
+
+        function importExcel() {
+            const fileInput = document.getElementById('excel-file');
+            if (!fileInput.files.length) return alert('الرجاء اختيار ملف Excel أولاً');
+            
+            const file = fileInput.files[0];
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    
+                    // قراءة الأوراق الأربعة
+                    const subscribersSheet = workbook.Sheets["المشتركون"];
+                    const monthsSheet = workbook.Sheets["الأشهر"];
+                    const readingsSheet = workbook.Sheets["القراءات"];
+                    const paymentsSheet = workbook.Sheets["الدفعات"];
+                    
+                    if (!subscribersSheet || !monthsSheet || !readingsSheet || !paymentsSheet) {
+                        throw new Error('الملف لا يحتوي على الأوراق المطلوبة (المشتركون, الأشهر, القراءات, الدفعات)');
+                    }
+                    
+                    const newSubscribers = XLSX.utils.sheet_to_json(subscribersSheet);
+                    const newMonths = XLSX.utils.sheet_to_json(monthsSheet);
+                    const newReadings = XLSX.utils.sheet_to_json(readingsSheet);
+                    const newPayments = XLSX.utils.sheet_to_json(paymentsSheet);
+                    
+                    // تحديث قاعدة البيانات (مع الاحتفاظ بالإعدادات الحالية)
+                    db.subscribers = newSubscribers;
+                    db.months = newMonths;
+                    db.readings = newReadings;
+                    db.payments = newPayments;
+                    
+                    saveData();
+                    alert('تم استيراد البيانات بنجاح');
+                    // إعادة تحميل الصفحة الحالية لتحديث الواجهات
+                    const activePage = document.querySelector('.page-section.active').id;
+                    showPage(activePage);
+                } catch (err) {
+                    console.error(err);
+                    alert('فشل استيراد الملف: ' + err.message);
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+   function exportBackup() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const seconds = String(now.getSeconds()).padStart(2, '0');
+    
+    const fileName = `المحاسب_Pro_${year}-${month}-${day}_${hours}-${minutes}-${seconds}.json`;
+    const jsonData = JSON.stringify(db);
+    const blob = new Blob([jsonData], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+        function importBackup() {
+            const f = document.getElementById('backup-file').files[0]; 
+            if(!f) return;
+            const r = new FileReader(); 
+            r.onload = e => { 
+                try { 
+                    db = JSON.parse(e.target.result); 
+                    saveData(); 
+                    location.reload(); 
+                } catch(err){ 
+                    alert('ملف تالف'); 
+                } 
+            }; 
+            r.readAsText(f);
+        }
+    </script>
+</body>
+</html>
